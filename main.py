@@ -301,6 +301,16 @@ def get_url_statistics(short_code: str, db: Session = Depends(get_db)):
         accessCount=db_url.access_count
     )
 
-
+# Run application
+if _name_ == "_main_":
+    create_tables()
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        server_header=False
+    )
 
 
