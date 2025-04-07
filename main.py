@@ -34,6 +34,22 @@ SessionLocal = sessionmaker(
     bind=engine        
 )
 
-# Base class for SQLAlchemy ORM models that provides the foundation for database table mappings
+# ==================Base class for SQLAlchemy ORM models that provides the foundation for database table mappings=====================
 Base = declarative_base()
 
+# =================CREATION OF TABLES DEFINED IN SQLALCHEMY MODELS=============
+def create_tables():
+    Base.metadata.create_all(bind=engine)
+
+# Database model for URL shortening service with tracking fields
+class URL(Base):
+    __tablename__ = "urls" 
+
+    id = Column(Integer, primary_key=True, index=True) 
+    url = Column(String(2048), index=True)  
+    short_code = Column(String(12), unique=True, index=True) 
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  
+    updated_at = Column(DateTime, 
+                      default=lambda: datetime.now(timezone.utc),
+                      onupdate=lambda: datetime.now(timezone.utc))  
+    access_count = Column(Integer, default=0)  
