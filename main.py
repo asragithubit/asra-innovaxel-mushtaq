@@ -24,6 +24,14 @@ engine = create_engine(
     echo=True  
 )
 
-
+#   ======================SESSION FACTORY FOR DATABASE OPERATIONS ==================
+# - autocommit=False: Requires explicit commits for data persistence
+# - autoflush=False: Gives manual control over when changes are sent to database  
+# - bind=engine: Connects sessions to our SQLite database engine
+SessionLocal = sessionmaker(
+    autocommit=False, 
+    autoflush=False,   
+    bind=engine        
+)
 
 
