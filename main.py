@@ -34,4 +34,6 @@ SessionLocal = sessionmaker(
     bind=engine        
 )
 
+# Base class for SQLAlchemy ORM models that provides the foundation for database table mappings
+Base = declarative_base()
 
