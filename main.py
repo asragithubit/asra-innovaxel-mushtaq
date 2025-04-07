@@ -53,3 +53,49 @@ class URL(Base):
                       default=lambda: datetime.now(timezone.utc),
                       onupdate=lambda: datetime.now(timezone.utc))  
     access_count = Column(Integer, default=0)  
+
+# VALIDATION SCHEMAS AND FASTAPI CONFIGURATION FOR URL SHORTENER SERVICE
+class URLCreate(BaseModel):
+    url: str
+
+    #@field_validator('url')
+    def validate_url(cls, v):
+        try:
+            result = urlparse(v)
+            if not all([result.scheme, result.netloc]):
+                raise ValueError("URL must include scheme (http/https) and domain")
+            if result.scheme not in ['http', 'https']:
+                raise ValueError("Only http and https URLs are allowed")
+            return v
+        except Exception as e:
+            raise ValueError(str(e))
+
+class URLInfo(BaseModel):
+    id: int
+    url: str
+    shortCode: str
+    createdAt: str
+    updatedAt: str
+    accessCount: int
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            datetime: lambda v: v.isoformat() + "Z"
+        },
+        alias_generator=lambda x: x
+    )
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+# FASTAPI APPLICATION INITIALIZATION WITH CUSTOM ERROR RESPONSES
+app = FastAPI(
+    title="URL Shortener",
+    version="1.0.0",
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse}
+    }
+)
+
