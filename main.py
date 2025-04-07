@@ -302,7 +302,7 @@ def get_url_statistics(short_code: str, db: Session = Depends(get_db)):
     )
 
 # Run application
-if _name_ == "_main_":
+if __name__ == "__main__":
     create_tables()
     import uvicorn
     uvicorn.run(
