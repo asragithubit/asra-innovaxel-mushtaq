@@ -112,5 +112,195 @@ def generate_short_code(length: int = 6) -> str:
     chars = string.ascii_letters + string.digits
     return ''.join(secrets.choice(chars) for _ in range(length))
 
+# Debug endpoint to check all URLs in database
+@app.get("/debug/all-urls", include_in_schema=False)
+def debug_all_urls(db: Session = Depends(get_db)):
+    urls = db.query(URL).all()
+    return {
+        "count": len(urls),
+        "urls": [{
+            "short_code": url.short_code,
+            "url": url.url
+        } for url in urls]
+    }
+
+#Ensures that the upcoming url is valid url
+class UpdateURLRequest(BaseModel):
+    url: str  # Ensures it's a valid URL
+
+@app.post(
+    "/shorten",
+    response_model=URLInfo,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Invalid URL"},
+        201: {"description": "Short URL created", "content": {"application/json": {"example": {
+            "id": 1,
+            "url": "https://example.com",
+            "shortCode": "abc123",
+            "createdAt": "2023-07-20T12:00:00Z",
+            "updatedAt": "2023-07-20T12:00:00Z",
+            "accessCount": 0
+        }}}}
+    }
+)
+def create_short_url(url: URLCreate, db: Session = Depends(get_db)):
+    try:
+        # Check URL starts with http:// or https://
+        if not url.url.startswith(('http://', 'https://')):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL must start with http:// or https://"
+            )
+            
+        # Existing URL check (case-insensitive)
+        existing_url = db.query(URL).filter(URL.url.ilike(url.url)).first()
+        if existing_url:
+            return {
+                "id": existing_url.id,
+                "url": existing_url.url,
+                "shortCode": existing_url.short_code,
+                "createdAt": existing_url.created_at.isoformat() + "Z",
+                "updatedAt": existing_url.updated_at.isoformat() + "Z",
+                "accessCount": existing_url.access_count
+            }
+
+        # Generate short code
+        short_code = generate_short_code()
+        while db.query(URL).filter(URL.short_code.ilike(short_code)).first():
+            short_code = generate_short_code()
+
+        # Save to database
+        db_url = URL(url=url.url, short_code=short_code)
+        db.add(db_url)
+        db.commit()
+        db.refresh(db_url)
+
+        return {
+            "id": db_url.id,
+            "url": db_url.url,
+            "shortCode": db_url.short_code,
+            "createdAt": db_url.created_at.isoformat() + "Z",
+            "updatedAt": db_url.updated_at.isoformat() + "Z",
+            "accessCount": 0
+        }
+
+    except Exception as e:
+        db.rollback()  # Added to ensure transaction consistency
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+
+@app.get("/shorten/{short_code}", response_model=URLInfo)
+def get_original_url(short_code: str, db: Session = Depends(get_db)):
+    short_code = short_code.strip()  # Added to handle whitespace
+    db_url = db.query(URL).filter(URL.short_code.ilike(short_code)).first()  # Changed to case-insensitive
+    
+    if not db_url:
+        # Added debug information
+        available = [url.short_code for url in db.query(URL).limit(5).all()]
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Short URL not found. First 5 available codes: {available}"
+        )
+    
+    db_url.access_count += 1
+    db.commit()
+    db.refresh(db_url)
+    
+    return {
+        "id": db_url.id,
+        "url": db_url.url,
+        "shortCode": db_url.short_code,
+        "createdAt": db_url.created_at.isoformat() + "Z",
+        "updatedAt": db_url.updated_at.isoformat() + "Z",
+        "accessCount": db_url.access_count
+    }
+
+#===================IMPLEMENTATION OF HTTP METHODS=============
+@app.put("/shorten/{short_code}", response_model=URLInfo)
+def update_short_url(
+    short_code: str,
+    request: UpdateURLRequest,
+    db: Session = Depends(get_db)
+):
+    short_code = short_code.strip()  # Added to handle whitespace
+    db_url = db.query(URL).filter(URL.short_code.ilike(short_code)).first()  # Changed to case-insensitive
+
+    if not db_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Short URL not found"
+        )
+
+    try:
+        db_url.short_code = request.url  # Fixed: was updating short_code instead of url
+        db_url.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(db_url)
+
+        return URLInfo(
+            id=db_url.id,
+            url=db_url.url,
+            shortCode=db_url.short_code,
+            createdAt=db_url.created_at.isoformat() + "Z",
+            updatedAt=db_url.updated_at.isoformat() + "Z",
+            accessCount=db_url.access_count
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+
+@app.delete("/shorten/{short_code}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_short_url(short_code: str, db: Session = Depends(get_db)):
+    print(f"Attempting to delete URL with short_code: {short_code}")  # Debugging line
+    short_code = short_code.strip()  # Added to handle whitespace
+    db_url = db.query(URL).filter(URL.short_code.ilike(short_code)).first()  # Changed to case-insensitive
+
+    if not db_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Short URL not found"
+        )
+
+    try:
+        db.delete(db_url)
+        db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+@app.get("/statistics/{short_code}", response_model=URLInfo)
+def get_url_statistics(short_code: str, db: Session = Depends(get_db)):
+    short_code = short_code.strip()  # Added to handle whitespace
+    db_url = db.query(URL).filter(URL.short_code.ilike(short_code)).first()  # Changed to case-insensitive
+
+    if not db_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Short URL not found"
+        )
+    
+    return URLInfo(
+        id=db_url.id,
+        url=db_url.url,
+        shortCode=db_url.short_code,
+        createdAt=db_url.created_at.isoformat() + "Z",
+        updatedAt=db_url.updated_at.isoformat() + "Z",
+        accessCount=db_url.access_count
+    )
+
+
 
 
