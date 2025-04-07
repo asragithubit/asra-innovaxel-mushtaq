@@ -107,4 +107,10 @@ def get_db():
     finally:
         db.close()
 
+#=============RANDOM CODE GENERATION USING SECRET MODULE
+def generate_short_code(length: int = 6) -> str:
+    chars = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(chars) for _ in range(length))
+
+
 
